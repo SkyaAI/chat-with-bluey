@@ -19,13 +19,14 @@ import Stripe from "stripe";
 // when STRIPE_SECRET_KEY isn't configured. Real Stripe calls still require a
 // valid key at runtime — this only keeps `next build` from crashing while
 // collecting page data for projects that don't use Stripe.
-export const stripe = new Stripe(
-  process.env.STRIPE_SECRET_KEY ?? "sk_test_placeholder_build_only",
-  {
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("STRIPE_SECRET_KEY is not configured");
+  return new Stripe(key, {
     apiVersion: "2025-02-24.acacia",
     typescript: true,
-  },
-);
+  });
+}
 
 // Set when this app was provisioned through a Connect platform
 export const CONNECT_ACCOUNT_ID = process.env.STRIPE_CONNECT_ACCOUNT_ID as
@@ -46,14 +47,14 @@ export const stripeAccountOptions = (): Stripe.RequestOptions | undefined =>
 export async function createCheckoutSession({
   priceId,
   customerId,
-  userId,
+  sessionKey,
   successUrl,
   cancelUrl,
   mode = "subscription",
 }: {
   priceId: string;
   customerId?: string;
-  userId: string;
+  sessionKey: string;
   successUrl: string;
   cancelUrl: string;
   mode?: "payment" | "subscription";
@@ -63,7 +64,8 @@ export async function createCheckoutSession({
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { userId },
+    client_reference_id: sessionKey,
+    metadata: { session_key: sessionKey },
     ...(customerId
       ? { customer: customerId }
       : { customer_creation: "always" }),
@@ -72,19 +74,19 @@ export async function createCheckoutSession({
     ...(mode === "subscription" && PLATFORM_FEE_PERCENT > 0
       ? {
           subscription_data: {
-            metadata: { userId },
+            metadata: { session_key: sessionKey },
             application_fee_percent: PLATFORM_FEE_PERCENT,
           },
         }
       : mode === "subscription"
-      ? { subscription_data: { metadata: { userId } } }
+      ? { subscription_data: { metadata: { session_key: sessionKey } } }
       : {}),
 
     // One-time payment platform fee — calculated after price lookup
     // (handled in checkout route where we have the amount)
   };
 
-  return stripe.checkout.sessions.create(params, stripeAccountOptions());
+  return getStripe().checkout.sessions.create(params, stripeAccountOptions());
 }
 
 // ─── Billing portal ───────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ export async function createPortalSession({
   customerId: string;
   returnUrl: string;
 }) {
-  return stripe.billingPortal.sessions.create(
+  return getStripe().billingPortal.sessions.create(
     { customer: customerId, return_url: returnUrl },
     stripeAccountOptions(),
   );
@@ -105,7 +107,7 @@ export async function createPortalSession({
 // ─── Webhook ──────────────────────────────────────────────────────────────────
 
 export function constructWebhookEvent(payload: string, signature: string) {
-  return stripe.webhooks.constructEvent(
+  return getStripe().webhooks.constructEvent(
     payload,
     signature,
     process.env.STRIPE_WEBHOOK_SECRET!,
