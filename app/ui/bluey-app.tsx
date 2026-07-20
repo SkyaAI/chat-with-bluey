@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import RemindersPanel from "@/app/ui/reminders-panel";
 import GamesPanel from "@/app/ui/games-panel";
 import AccountPanel from "@/app/ui/account-panel";
+import { createClient, ensureAnonymousUser } from "@/lib/supabase/client";
 
 type Conversation = { id: string; title: string; created_at: string };
 type Message = { id: string; conversation_id: string; role: "user" | "assistant"; content: string; input_mode: string; created_at: string };
@@ -17,6 +18,7 @@ function sessionKey() {
 }
 
 export default function BlueyApp() {
+  const supabase = useMemo(() => createClient(), []);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -36,7 +38,7 @@ export default function BlueyApp() {
     setLoading(true); setError("");
     try {
       const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
-      const response = await fetch(`/api/chat${query}`, { headers: { "x-session-key": sessionKey() } });
+      const response = await fetch(`/api/chat${query}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       setConversations(data.conversations); setMessages(data.messages); setUsed(data.used); setSubscribed(data.subscribed);
@@ -44,7 +46,22 @@ export default function BlueyApp() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(null); }, [load]);
+  useEffect(() => {
+    let active = true;
+    async function startSecureGuestSession() {
+      try {
+        await ensureAnonymousUser(supabase);
+        if (active) await load(null);
+      } catch (caught) {
+        if (active) {
+          setError(caught instanceof Error ? caught.message : "Bluey could not start a secure guest session.");
+          setLoading(false);
+        }
+      }
+    }
+    void startSecureGuestSession();
+    return () => { active = false; };
+  }, [load, supabase]);
   const selectedConversation = useMemo(() => conversations.find((item) => item.id === selected), [conversations, selected]);
 
   async function choose(id: string) { setSelected(id); await load(id); }
@@ -53,7 +70,7 @@ export default function BlueyApp() {
     const content = input.trim(); setInput(""); setSending(true); setError("");
     setMessages((current) => [...current, { id: `temp-${Date.now()}`, conversation_id: selected ?? "", role: "user", content, input_mode: "text", created_at: new Date().toISOString() }]);
     try {
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json", "x-session-key": sessionKey() }, body: JSON.stringify({ conversationId: selected, content, inputMode, imageData }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: selected, content, inputMode, imageData }) });
       const data = await response.json();
       if (response.status === 402) { setPaywall(true); setUsed(data.used); return; }
       if (!response.ok) throw new Error(data.error);
