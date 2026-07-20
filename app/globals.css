@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+:root { color-scheme: light; --blue: #175cd3; --navy: #102a56; --cream: #fffaf0; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--cream); color: #172b4d; font-family: Arial, Helvetica, sans-serif; font-size: 18px; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+.focus-ring:focus-visible { outline: 4px solid #f6c344; outline-offset: 2px; }
+.safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
