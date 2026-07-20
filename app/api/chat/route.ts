@@ -37,6 +37,8 @@ export async function POST(request: Request) {
     const content = body.content?.trim();
     if (!content || content.length > 2000) return NextResponse.json({ error: "Please enter a shorter question." }, { status: 400 });
     const inputMode = body.inputMode ?? "text";
+    if (!["text", "voice", "image"].includes(inputMode)) return NextResponse.json({ error: "Unsupported input mode." }, { status: 400 });
+    if (body.imageData && (!/^data:image\/(png|jpeg|webp);base64,/.test(body.imageData) || body.imageData.length > 3_500_000)) return NextResponse.json({ error: "Choose a PNG, JPG, or WebP photo smaller than 2.5 MB." }, { status: 400 });
     const db = createDataClient();
 
     const subscription = await db.from("subscriptions").select("status").eq("session_key", sessionKey).eq("status", "active").limit(1).maybeSingle();
